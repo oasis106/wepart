@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--  [[개정이력(Modification Information)]]       -->
+<!--  수정일        수정자     수정내용               -->
+<!--  ==========   ======    ==============        -->
+<!--  2022. 4. 28.}     이응주     최초작성               -->
+<!--  Copyright (c) 2022 by DDIT All right reserved -->
+<mapper namespace="kr.or.ddit.attatch.dao.AttatchDAO">
+
+	<select id="selectAttach" resultType="AttatchVO" parameterType="int">
+		SELECT *
+		FROM ATTATCH
+		WHERE ATT_NO = #{attNo}
+	</select>
+
+	<insert id="insertAttatchs" parameterType="BoardVO">
+		<selectKey keyProperty="realBoard.startAttNo" resultType="int" order="BEFORE">
+			SELECT NVL(max(ATT_NO) + 1, 1)
+			FROM ATTATCH
+		</selectKey>
+		INSERT ALL
+			<foreach collection="realBoard.attatchList" item="attatch" index="idx">
+				INTO ATTATCH 
+				(
+					  ATT_NO
+					, BO_NO
+					, ATT_FILENAME
+					, ATT_SAVENAME
+					, ATT_MIME
+					, ATT_SIZE
+					, ATT_FANCY
+				)
+				VALUES
+				(
+					  #{realBoard.startAttNo}+#{idx}
+					, #{boNo,jdbcType=VARCHAR}
+					, #{attatch.attFilename,jdbcType=VARCHAR}
+					, #{attatch.attSavename,jdbcType=VARCHAR}
+					, #{attatch.attMime,jdbcType=VARCHAR}
+					, #{attatch.attSize,jdbcType=NUMERIC}
+					, #{attatch.attFancy,jdbcType=VARCHAR}
+				)
+			</foreach>
+		SELECT * FROM DUAL
+	</insert>
+	
+	<delete id="deleteAttaches" parameterType="BoardVO">
+		DELETE FROM ATTATCH
+		WHERE ATT_NO IN
+		<foreach collection="realBoard.delAttNos" item="delAttNo" separator="," open="(" close=")">
+			#{delAttNo}
+		</foreach>
+	</delete>
+</mapper>

@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.bill.dao.MBillDAO">
+	<!--  [[개정이력(Modification Information)]]       -->
+<!--  수정일        수정자     수정내용               -->
+<!--  ==========   ======    ==============        -->
+<!--  2022. 5. 3.}     이응주     최초작성               -->
+<!--  Copyright (c) 2022 by DDIT All right reserved -->
+	<insert id="insertMBill" parameterType="MBillVO">
+		INSERT INTO BILL (
+		BILL_NO, BILL_SUM, PAYER_NO, FEE_NO
+		, BILL_DLINE, BILL_OVERSUM
+		)
+		VALUES
+		(
+			#{billNo}
+		  , #{billSum}
+		  , #{payerNo}
+		  , #{feeNo}	
+		  , TO_DATE(#{billDline}, 'YYYY/MM/DD HH24:MI:SS')
+		  , #{billOversum}
+		)
+	
+	</insert>
+	
+	<update id="updateBillPayDate" parameterType="MBillVO">
+		UPDATE BILL
+		SET 
+			BILL_PAYDATE = SYSDATE
+			, BILL_PAYSUM = #{billPaysum}
+		WHERE BILL_NO = #{billNo}
+	</update>
+	
+	<select id="selectMBillList" parameterType="long" resultType="MBillVO">
+		SELECT *
+		FROM BILL
+		WHERE PAYER_NO = #{payerNo}
+		ORDER BY BILL_NO
+	</select>
+	
+	<select id="selectMBillListOneYear" parameterType="BillSearchVO" resultType="MBillVO">
+		SELECT *
+		FROM BILL
+		WHERE PAYER_NO = #{payerNo}
+			AND 'B'||(${month}+1) > BILL_NO
+			AND BILL_NO > 'B'||(#{month} - 100)
+		ORDER BY BILL_NO
+	</select>
+	
+	<select id="recentMBill" parameterType="long" resultType="String">
+		SELECT SUBSTR(MAX(BILL_NO), 2, 6)
+		FROM BILL
+		WHERE PAYER_NO = #{payerNo}
+	</select>
+	
+	<resultMap type="MBillVO" id="BillByMonth" autoMapping="true">
+		<id property="billNo" column="BILL_NO" />
+		<collection property="btailList" ofType="MBillDetailVO" autoMapping="true">
+			<id property="fcode" column="FCODE" />
+			<id property="billNo" column="BILL_NO" />
+		</collection>
+	</resultMap>
+	
+	<select id="selectMBillByMonth" parameterType="BillSearchVO" resultMap="BillByMonth">
+		SELECT A.BILL_NO, TO_CHAR(A.BILL_DLINE, 'YYYY-MM-DD') BILL_DLINE
+		    , TRUNC(A.BILL_SUM) BILL_SUM
+		    , B.FCODE
+		    , (SELECT FNAME FROM FEECODE WHERE FCODE = B.FCODE) FNAME
+		    , TRUNC(B.BTAIL_SUM) BTAIL_SUM
+		    , TRUNC(A.BILL_OVERSUM) BILL_OVERSUM
+		    , BILL_PAYDATE
+		    , BILL_PAYSUM
+		
+		FROM(SELECT *
+			FROM BILL
+			WHERE PAYER_NO = #{payerNo}
+			AND SUBSTR(BILL_NO, 2,6) = #{month}) A 
+			LEFT JOIN BILL_DETAIL B ON (A.BILL_NO = B.BILL_NO)
+	</select>
+	
+	<select id="selectMBillDetail" parameterType="String" resultType="MBillVO">
+		SELECT A.BILL_NO 
+		    , FCODE
+		    , (SELECT FNAME FROM FEECODE WHERE FCODE = A.FCODE) FNAME
+		    , TRUNC(A.BTAIL_SUM) BTAIL_SUM
+		FROM BILL_DETAIL A
+		WHERE BILL_NO = #{billNo}
+	</select>
+	
+	<select id="houseArea" parameterType="long" resultType="int">
+		SELECT HOUSE_AREA
+		FROM HOUSE
+		WHERE PAYER_NO = #{payerNo}
+	</select>
+	
+	<select id="totalAreaAVG" parameterType="BillSearchVO" resultType="MBillVO">
+		SELECT SUBSTR(BILL_NO, 1, 7) BILL_NO, TRUNC(AVG(BILL_SUM)) BILL_SUM
+		FROM BILL
+		WHERE PAYER_NO
+			IN (SELECT PAYER_NO
+			    FROM HOUSE 
+			    WHERE HOUSE_AREA = #{houseArea})
+			AND 'B'||(${month}+1) > BILL_NO
+			AND BILL_NO > 'B'||(#{month} - 100)
+		GROUP BY(SUBSTR(BILL_NO, 1, 7))
+		ORDER BY SUBSTR(BILL_NO, 1, 7)
+	</select>
+	
+	<select id="detailByHouse" parameterType="Map" resultType="int">
+		SELECT TRUNC(BTAIL_SUM) BTAIL_SUM
+		FROM BILL_DETAIL
+		WHERE INSTR(BILL_NO, #{payerNo}) > 0
+			AND 'B'||(${month}+1) > BILL_NO
+			AND BILL_NO > 'B'||(#{month} - 100)
+			AND FCODE = #{fcode}
+	</select>
+	
+	<select id="detailAVGByArea" parameterType="BillSearchVO" resultType="detailAVGVO">
+		SELECT SUBSTR(BILL_NO, 2, 6) BILL_MONTH, TRUNC(AVG(BTAIL_SUM)) BTAIL_SUM
+		FROM BILL_DETAIL A, HOUSE B
+		WHERE FCODE = #{fcode}
+			AND B.HOUSE_AREA = #{houseArea}
+			AND INSTR(A.BILL_NO, B.PAYER_NO) > 0
+			AND 'B'||(${month}+1) > BILL_NO
+			AND BILL_NO > 'B'||(#{month} - 100)
+		GROUP BY SUBSTR(BILL_NO, 2, 6)
+		ORDER BY SUBSTR(BILL_NO, 2, 6)
+	</select>
+	
+	<select id="payCompleteList" resultType="MBillVO" parameterType="long">
+		SELECT  (SUBSTR(bill_no, 2, 4) || '.' || SUBSTR(BILL_NO, 6, 2)) BILL_NO 
+			,TO_CHAR(bill_dline, 'YYYY.MM.DD') BILL_DLINE 
+			,TO_CHAR(bill_paydate, 'YYYY.MM.DD') BILL_PAYDATE
+		   ,bill_paysum ,bill_sum ,bill_oversum
+		   ,bill_debt ,bill_oday ,bill_ratio
+		   ,bill_state ,bill_ym ,payer_no
+		   ,fee_no
+		FROM BILL
+		WHERE BILL_PAYDATE IS NOT NULL
+		AND PAYER_NO = #{payerNo}
+		ORDER BY BILL_NO
+	</select>
+	
+
+</mapper>

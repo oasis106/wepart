@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="kr.or.ddit.notice.dao.NoticeDAO">
+	<!--  [[개정이력(Modification Information)]]       -->
+<!--  수정일        수정자     수정내용               -->
+<!--  ==========   ======    ==============        -->
+<!--  2022. 5. 3.}     이응주     최초작성               -->
+<!--  Copyright (c) 2022 by DDIT All right reserved -->
+
+	<update id="increaseHit" parameterType="NoticeVO">
+		UPDATE NOTICE
+		SET
+			NT_HIT = NT_HIT+1
+		WHERE NT_NO = #{ntNo}
+	</update>
+
+	<delete id="deleteNotice" parameterType="NoticeVO">
+		DELETE FROM NOTICE
+		WHERE NT_NO = #{ntNo}
+	</delete>
+	
+	<insert id="insertNotice" parameterType="NoticeVO">
+		<selectKey resultType="string" keyProperty="ntNo" order="BEFORE">
+			SELECT 'nt' || LPAD(NVL(max(substr(nt_no, 4))+1, 1), 8, 0) 
+			FROM NOTICE
+		</selectKey>
+		
+		INSERT INTO NOTICE 
+		(
+			  NT_NO
+			, NT_TITLE			
+			, NT_CONTENT
+			, NT_CREATE
+			, NT_HIT
+			, NT_LIKE
+			<if test="ntParent neq null">
+			, NT_PARENT
+			</if>
+			<if test="ntCparent neq null">
+			, NT_CPARENT
+			</if>
+			, EMP_ID
+		)
+		VALUES
+		(
+			  #{ntNo}
+			, #{ntTitle}
+			, #{ntContent}
+			, SYSDATE
+			, 0
+			, 0
+			<if test="ntParent neq null">
+			, #{ntParent}
+			</if>
+			<if test="ntCparent neq null">
+			, #{ntCparent}	
+			</if>
+			<if test="empVO neq null">
+			, #{empVO.empId}
+			</if>
+			<if test="memberVO neq null">
+			, #{memberVO.memId}
+			</if>
+		)
+		
+	</insert>
+	
+	<update id="updateNotice" parameterType="NoticeVO">
+		UPDATE NOTICE
+		SET
+		 	  NT_TITLE = #{ntTitle}
+			, NT_CONTENT = #{ntContent}
+			, NT_UPDATE = SYSDATE
+		WHERE NT_NO = #{ntNo}
+	
+	</update>
+	
+	<resultMap type="NoticeVO" id="noticeMap" autoMapping="true">
+		<id property="ntNo" column="NT_NO" />
+		<collection property="attatchList" ofType="AttatchVO" autoMapping="true">
+			<id property="attNo" column="ATT_NO" />
+		</collection>
+	</resultMap>
+	
+	<select id="selectNotice" parameterType="NoticeVO" resultMap="noticeMap">
+		SELECT
+		         nt_no ,nt_title ,nt_content
+		       , TO_CHAR(nt_create, 'YYYY.MM.DD. HH24:MI') NT_CREATE ,nt_hit ,nt_like
+		       , nt_parent ,emp_id
+		       , B.*
+		FROM notice A
+			LEFT OUTER JOIN ATTATCH B
+			ON A.NT_NO = B.BO_NO
+		WHERE NT_NO = #{ntNo}
+	</select>
+	
+	<sql id="searchFrag">
+		<if test="@org.apache.commons.lang3.StringUtils@isNotBlank(detailCondition.searchWord)">
+			<choose>
+				<when test="detailCondition.searchDate neq 'all'">
+					<if test="detailCondition.searchDate eq 'day'">
+						AND NT_CREATE > SYSDATE - 1
+					</if>
+					<if test="detailCondition.searchDate eq 'week'">
+						AND NT_CREATE > SYSDATE - 7
+					</if>
+					<if test="detailCondition.searchDate eq 'month'">
+						AND NT_CREATE >= add_months(sysdate,-1)
+					</if>
+					<if test="detailCondition.searchDate eq 'halfYear'">
+						AND NT_CREATE >= add_months(sysdate,-6)
+					</if>
+					<if test="detailCondition.searchDate eq 'year'">
+						AND NT_CREATE >= add_months(sysdate,-12)
+					</if>
+				</when>
+			</choose>
+			<if test="detailCondition.searchType eq 'title'">
+				AND INSTR(NT_TITLE, #{detailCondition.searchWord}) > 0
+			</if>
+			<if test="detailCondition.searchType eq 'content'">
+				AND INSTR(NT_CONTENT, #{detailCondition.searchWord}) > 0
+			</if>
+			<if test="detailCondition.searchType eq 'titleContent'">
+				AND (INSTR(NT_TITLE, #{detailCondition.searchWord}) > 0
+				OR INSTR(NT_CONTENT, #{detailCondition.searchWord}) > 0)
+			</if>
+			<if test="detailCondition.searchType eq 'writer'">
+				AND INSTR(EMP_ID, #{detailCondition.searchWord}) > 0
+			</if>
+		</if>
+	</sql>
+	
+	<select id="selectTotalRecord" parameterType="MyPagingVO" resultType="int">
+		SELECT COUNT(*)
+	    FROM NOTICE 	
+	    WHERE NT_PARENT IS NULL
+	    <include refid="searchFrag" />
+
+	</select>
+	
+	<select id="selectNoticeList" resultType="NoticeVO" parameterType="MyPagingVO">
+		SELECT B.*
+		FROM(
+		    SELECT ROWNUM AS RNUM, A.*
+		    FROM(
+		        SELECT
+		            nt_no ,nt_title ,nt_content
+		           ,TO_CHAR(nt_create, 'YYYY.MM.DD. HH24:MI') nt_create
+		           ,TO_CHAR(nt_update, 'YYYY.MM.DD. HH24:MI') nt_update
+		           ,nt_hit ,nt_like
+		           ,nt_parent ,emp_id ,nt_cparent
+		        FROM NOTICE
+		        WHERE NT_PARENT IS NULL
+			    <include refid="searchFrag" />
+		        ORDER BY NT_CREATE DESC
+		    ) A
+		) B
+		<![CDATA[
+		WHERE #{startRow} <= RNUM AND RNUM <= #{endRow}		
+		]]>
+	</select>
+	
+	<select id="checkLike" parameterType="NoticeVO" resultType="int">
+		SELECT COUNT(*)
+		FROM NOTICE_LIKE
+		WHERE NT_NO = #{ntNo}
+		<if test="empVO neq null">
+		AND MEM_ID = #{empVO.empId}
+		</if>
+		<if test="memberVO neq null">
+		AND MEM_ID = #{memberVO.memId}
+		</if>
+	</select>
+	
+	<insert id="addLike" parameterType="NoticeVO">
+		INSERT INTO NOTICE_LIKE
+		VALUES(
+		#{ntNo}
+		<if test="empVO neq null">
+		, #{empVO.empId}
+		</if>
+		<if test="memberVO neq null">
+		, #{memberVO.memId}
+		</if>
+		)
+	</insert>
+	
+	<delete id="deleteLike" parameterType="NoticeVO">
+		DELETE FROM NOTICE_LIKE
+		WHERE NT_NO = #{ntNo}
+		<if test="empVO neq null">
+		AND MEM_ID = #{empVO.empId}
+		</if>
+		<if test="memberVO neq null">
+		AND MEM_ID = #{memberVO.memId}
+		</if>
+	</delete>
+	
+	<update id="plusLike" parameterType="NoticeVO">
+		UPDATE NOTICE
+		SET
+		NT_LIKE = NT_LIKE + 1
+		WHERE NT_NO = #{ntNo}
+	</update>
+	
+	<update id="minusLike" parameterType="NoticeVO">
+		UPDATE NOTICE
+		SET
+		NT_LIKE = NT_LIKE - 1
+		WHERE NT_NO = #{ntNo}
+	</update>
+	
+	<select id="countLike" parameterType="NoticeVO" resultType="int">
+		SELECT NT_LIKE
+		FROM NOTICE
+		WHERE NT_NO = #{ntNo}
+	</select>
+	
+	<resultMap type="NoticeVO" id="commentList" autoMapping="true">
+<!-- 		얘는, 원댓글임.  -->
+		<id property="ntNo" column="NT_NO" />
+		<collection property="recommentList" ofType="NoticeVO" autoMapping="false">
+			<id property="ntNo" column="BNT_NO" />
+			<id property="ntTitle" column="BNT_TITLE" />
+			<id property="ntContent" column="BNT_CONTENT" />
+			<id property="ntCreate" column="BNT_CREATE" />
+			<id property="ntParent" column="BNT_PARENT" />
+			<id property="empId" column="BEMP_ID" />
+			<id property="ntCparent" column="BNT_CPARENT" />
+			<id property="ntUpdate" column="BNT_UPDATE" />
+		</collection>
+	</resultMap>
+	
+	<select id="selectCommentList" parameterType="String" resultMap="commentList">
+		SELECT A.nt_no, A.nt_title ,A.nt_content
+		   , TO_CHAR(A.nt_create, 'YYYY.MM.DD. HH24:MI:SS') NT_CREATE
+		   , TO_CHAR(A.nt_update, 'YYYY.MM.DD. HH24:MI:SS') NT_UPDATE
+		   , A.nt_parent ,A.emp_id
+		       , B.nt_no BNT_NO, B.nt_title BNT_TITLE ,B.nt_content BNT_CONTENT
+		   , TO_CHAR(B.nt_create, 'YYYY.MM.DD. HH24:MI:SS') BNT_CREATE 
+		   , TO_CHAR(B.nt_update, 'YYYY.MM.DD. HH24:MI:SS') BNT_UPDATE
+		   , B.nt_parent BNT_PARENT ,B.emp_id BEMP_ID 
+		   , B.nt_cparent BNT_CPARENT
+		FROM (SELECT *
+		        FROM NOTICE 
+		        WHERE NT_PARENT = #{ntNo}
+		          AND NT_CPARENT IS NULL
+		     ) A
+		        LEFT OUTER JOIN
+		     (SELECT *
+		        FROM NOTICE 
+		        WHERE NT_PARENT = #{ntNo}
+		     ) B
+		     ON A.NT_NO = B.NT_CPARENT
+		ORDER BY NT_CREATE ASC, BNT_CREATE ASC
+	</select>
+	
+	<delete id="deleteComment" parameterType="string">
+		DELETE FROM NOTICE
+		WHERE NT_NO = #{ntNo}
+	</delete>
+	
+	<update id="updateComment" parameterType="NoticeVO">
+		UPDATE NOTICE
+		SET
+			NT_CONTENT = #{ntContent}
+		  , NT_UPDATE = sysdate
+		WHERE NT_NO = #{ntNo}
+	</update>
+	
+	<select id="selectNoticeListForMain" resultType="NoticeVO">
+		SELECT A.*, ROWNUM 
+		FROM(SELECT  
+			    nt_no ,nt_title ,TO_CHAR(nt_create, 'YYYY-MM-DD') nt_create
+			   ,nt_hit ,nt_like ,nt_parent
+			   ,emp_id ,nt_cparent ,nt_update, nt_content
+			FROM NOTICE
+			WHERE NT_PARENT IS NULL
+			ORDER BY NT_NO DESC) A
+		WHERE ROWNUM BETWEEN 1 AND 4
+	</select>
+	
+</mapper>
